@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>LLM 权重直观可视化</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f1421;
+      --panel: #182237;
+      --accent: #56d8ff;
+      --accent-2: #ffb347;
+      --text: #f3f4f8;
+      --muted: #9aa4bf;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: "Inter", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 20%, #1f2c4d, #0b0f1c);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      margin: 24px 0 12px;
+    }
+
+    p.subtitle {
+      text-align: center;
+      margin-top: 0;
+      color: var(--muted);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr 1fr;
+      gap: 18px;
+      padding: 0 24px 24px;
+      flex: 1;
+    }
+
+    .panel {
+      background: rgba(24, 34, 55, 0.9);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .section-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+
+    .inputs, .presets, .sliders, .outputs {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      flex: 1;
+      min-width: 90px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: transparent;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    button.active {
+      background: linear-gradient(120deg, rgba(86, 216, 255, 0.3), rgba(86, 216, 255, 0.1));
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 12px rgba(86, 216, 255, 0.6);
+    }
+
+    .network canvas {
+      width: 100%;
+      height: 320px;
+      border-radius: 16px;
+      background: rgba(5, 8, 15, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .slider-row label {
+      width: 95px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      background: transparent;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      background: linear-gradient(90deg, rgba(86, 216, 255, 0.4), rgba(255, 179, 71, 0.4));
+      border-radius: 999px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 10px rgba(86, 216, 255, 0.8);
+      margin-top: -5px;
+      cursor: pointer;
+    }
+
+    .output-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .bar {
+      height: 38px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar span {
+      position: absolute;
+      left: 12px;
+      top: 8px;
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+    }
+
+    .fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      border-radius: 12px;
+      background: linear-gradient(120deg, rgba(86, 216, 255, 0.8), rgba(255, 179, 71, 0.8));
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .explanation {
+      background: rgba(15, 20, 33, 0.8);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 16px 24px 24px;
+    }
+
+    .explanation p {
+      margin: 6px 0;
+      color: var(--muted);
+    }
+
+    .legend {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    .legend span.input::before { background: #5ee9c8; }
+    .legend span.hidden::before { background: #56d8ff; }
+    .legend span.output::before { background: #ffb347; }
+
+    @media (max-width: 1024px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>权重 = 想法之间的「影响力旋钮」</h1>
+  <p class="subtitle">拖动、点击，观察输入如何被权重放大/削弱后影响输出。</p>
+  <div class="layout">
+    <div class="panel">
+      <div class="section-title">输入示例 (点选)</div>
+      <div class="inputs button-group" id="inputButtons"></div>
+      <div class="section-title">预设权重场景</div>
+      <div class="presets button-group" id="presetButtons"></div>
+    </div>
+    <div class="panel network">
+      <div class="section-title">神经网络示意</div>
+      <canvas id="networkCanvas" width="640" height="360"></canvas>
+      <div class="legend">
+        <span class="input">输入</span>
+        <span class="hidden">隐藏层</span>
+        <span class="output">输出</span>
+      </div>
+      <div class="section-title">手动调权重</div>
+      <div class="sliders" id="weightSliders"></div>
+    </div>
+    <div class="panel">
+      <div class="section-title">输出预览</div>
+      <div class="outputs">
+        <div class="output-bars" id="outputBars"></div>
+      </div>
+    </div>
+  </div>
+  <div class="explanation">
+    <p id="storyline">选择一个输入特征，看看它如何通过不同“旋钮”影响输出。</p>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('networkCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const inputs = [
+      { name: '「喵喵声」', vector: [1, 0, 0], story: '猫叫声让“猫”输出更自信。' },
+      { name: '「摇尾巴」', vector: [0, 1, 0], story: '狗的肢体动作会激活对应通路。' },
+      { name: '「胡须 + 爪子」', vector: [0.8, 0, 0.4], story: '组合特征需要多个权重协同。' }
+    ];
+
+    const outputs = ['猫', '狗'];
+
+    const weightConfig = {
+      w1: 0.9, // input0 -> hidden0
+      w2: 0.4, // input0 -> hidden1
+      w3: 0.2, // input1 -> hidden0
+      w4: 0.9, // input1 -> hidden1
+      w5: 0.6, // input2 -> hidden0
+      w6: 0.3, // input2 -> hidden1
+      w7: 0.7, // hidden0 -> cat
+      w8: 0.5, // hidden1 -> cat
+      w9: 0.3, // hidden0 -> dog
+      w10: 0.8 // hidden1 -> dog
+    };
+
+    const presets = {
+      '偏爱猫': { w1: 1.2, w2: 0.8, w3: 0.3, w4: 0.7, w5: 0.8, w6: 0.4, w7: 1.3, w8: 1.1, w9: 0.2, w10: 0.5 },
+      '偏爱狗': { w1: 0.5, w2: 0.5, w3: 1.2, w4: 1.2, w5: 0.4, w6: 0.8, w7: 0.2, w8: 0.4, w9: 1.1, w10: 1.2 },
+      '中立训练后': { w1: 0.8, w2: 0.8, w3: 0.8, w4: 0.8, w5: 0.6, w6: 0.6, w7: 0.7, w8: 0.7, w9: 0.7, w10: 0.7 }
+    };
+
+    const connections = [
+      { from: 0, to: 3, key: 'w1' },
+      { from: 0, to: 4, key: 'w2' },
+      { from: 1, to: 3, key: 'w3' },
+      { from: 1, to: 4, key: 'w4' },
+      { from: 2, to: 3, key: 'w5' },
+      { from: 2, to: 4, key: 'w6' },
+      { from: 3, to: 5, key: 'w7' },
+      { from: 4, to: 5, key: 'w8' },
+      { from: 3, to: 6, key: 'w9' },
+      { from: 4, to: 6, key: 'w10' }
+    ];
+
+    const nodes = [
+      { x: 90, y: 80, label: '输入 A' },
+      { x: 90, y: 180, label: '输入 B' },
+      { x: 90, y: 280, label: '输入 C' },
+      { x: 300, y: 120, label: '隐藏 1' },
+      { x: 300, y: 240, label: '隐藏 2' },
+      { x: 520, y: 150, label: '输出: 猫' },
+      { x: 520, y: 270, label: '输出: 狗' }
+    ];
+
+    const hiddenActivation = [0, 0];
+    const outputActivation = [0, 0];
+
+    let currentInputIndex = 0;
+
+    const inputButtons = document.getElementById('inputButtons');
+    inputs.forEach((inp, idx) => {
+      const btn = document.createElement('button');
+      btn.textContent = inp.name;
+      btn.addEventListener('click', () => {
+        currentInputIndex = idx;
+        setActiveButton(inputButtons, btn);
+        updateStory(inp.story);
+        compute();
+      });
+      if (idx === 0) btn.classList.add('active');
+      inputButtons.appendChild(btn);
+    });
+
+    const presetButtons = document.getElementById('presetButtons');
+    Object.entries(presets).forEach(([name, conf], idx) => {
+      const btn = document.createElement('button');
+      btn.textContent = name;
+      btn.addEventListener('click', () => {
+        Object.keys(weightConfig).forEach(key => {
+          weightConfig[key] = conf[key];
+        });
+        setActiveButton(presetButtons, btn);
+        updateSliders();
+        updateStory(`场景「${name}」：训练让某些权重更大/更小。`);
+        compute();
+      });
+      if (idx === 2) btn.classList.add('active');
+      presetButtons.appendChild(btn);
+    });
+
+    const weightSliders = document.getElementById('weightSliders');
+    Object.keys(weightConfig).forEach((key) => {
+      const row = document.createElement('div');
+      row.className = 'slider-row';
+      const label = document.createElement('label');
+      label.textContent = `${key.toUpperCase()} 影响力`;
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = 0;
+      slider.max = 1.5;
+      slider.step = 0.05;
+      slider.value = weightConfig[key];
+      slider.addEventListener('input', () => {
+        weightConfig[key] = Number(slider.value);
+        compute();
+        updateStory(`你正在调节 ${key.toUpperCase()}：它像旋钮一样改变线条影响力。`);
+      });
+      row.appendChild(label);
+      row.appendChild(slider);
+      weightSliders.appendChild(row);
+    });
+
+    const outputBars = document.getElementById('outputBars');
+    outputs.forEach(label => {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      const fill = document.createElement('div');
+      fill.className = 'fill';
+      const span = document.createElement('span');
+      span.textContent = label;
+      bar.appendChild(fill);
+      bar.appendChild(span);
+      outputBars.appendChild(bar);
+      bar.fillEl = fill;
+    });
+
+    function setActiveButton(container, activeBtn) {
+      Array.from(container.children).forEach(btn => btn.classList.remove('active'));
+      activeBtn.classList.add('active');
+    }
+
+    function updateSliders() {
+      Array.from(weightSliders.querySelectorAll('input[type="range"]')).forEach((slider, idx) => {
+        const key = Object.keys(weightConfig)[idx];
+        slider.value = weightConfig[key];
+      });
+    }
+
+    function updateStory(text) {
+      document.getElementById('storyline').textContent = text;
+    }
+
+    function compute() {
+      const input = inputs[currentInputIndex].vector;
+
+      hiddenActivation[0] = sigmoid(input[0] * weightConfig.w1 + input[1] * weightConfig.w3 + input[2] * weightConfig.w5);
+      hiddenActivation[1] = sigmoid(input[0] * weightConfig.w2 + input[1] * weightConfig.w4 + input[2] * weightConfig.w6);
+      outputActivation[0] = sigmoid(hiddenActivation[0] * weightConfig.w7 + hiddenActivation[1] * weightConfig.w8);
+      outputActivation[1] = sigmoid(hiddenActivation[0] * weightConfig.w9 + hiddenActivation[1] * weightConfig.w10);
+
+      updateBars();
+      drawNetwork();
+    }
+
+    function sigmoid(x) {
+      return 1 / (1 + Math.exp(-x));
+    }
+
+    function updateBars() {
+      const total = outputActivation[0] + outputActivation[1];
+      const normalized = total === 0 ? [0, 0] : outputActivation.map(v => (v / total) * 100);
+      Array.from(outputBars.children).forEach((bar, idx) => {
+        bar.fillEl.style.width = `${normalized[idx]}%`;
+      });
+    }
+
+    function drawNetwork() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      connections.forEach(conn => {
+        const from = nodes[conn.from];
+        const to = nodes[conn.to];
+        const w = weightConfig[conn.key];
+        const width = 1 + w * 3;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        const hue = conn.to >= 5 ? 35 : 190;
+        ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${Math.min(0.2 + w / 2, 1)})`;
+        ctx.lineWidth = width;
+        ctx.stroke();
+      });
+
+      nodes.forEach((node, idx) => {
+        ctx.beginPath();
+        const radius = idx < 3 ? 18 : idx < 5 ? 20 : 24;
+        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        let gradient = ctx.createRadialGradient(node.x, node.y, 5, node.x, node.y, radius);
+        if (idx < 3) {
+          gradient.addColorStop(0, '#5ee9c8');
+          gradient.addColorStop(1, '#134537');
+        } else if (idx < 5) {
+          gradient.addColorStop(0, '#56d8ff');
+          gradient.addColorStop(1, '#132744');
+        } else {
+          gradient.addColorStop(0, '#ffb347');
+          gradient.addColorStop(1, '#3d2413');
+        }
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = '14px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x, node.y - radius - 8);
+      });
+
+      const inputVec = inputs[currentInputIndex].vector;
+      [0, 1, 2].forEach((idx) => {
+        const pulse = 6 + inputVec[idx] * 12;
+        ctx.beginPath();
+        ctx.arc(nodes[idx].x, nodes[idx].y, pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(94, 233, 200, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+
+      hiddenActivation.forEach((value, hidIdx) => {
+        const nodeIndex = 3 + hidIdx;
+        const pulse = 6 + value * 12;
+        ctx.beginPath();
+        ctx.arc(nodes[nodeIndex].x, nodes[nodeIndex].y, pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(86, 216, 255, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+
+      outputActivation.forEach((value, outIdx) => {
+        const nodeIndex = 5 + outIdx;
+        const pulse = 6 + value * 12;
+        ctx.beginPath();
+        ctx.arc(nodes[nodeIndex].x, nodes[nodeIndex].y, pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 179, 71, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    }
+
+    compute();
+  </script>
+</body>
+</html>
